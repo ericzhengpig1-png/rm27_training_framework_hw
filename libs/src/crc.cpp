@@ -114,6 +114,9 @@ uint8_t Get_CRC8_Check_Sum(const uint8_t *pchMessage, uint16_t dwLength, uint8_t
 {
   uint8_t ucIndex;
 
+  if (pchMessage == nullptr)
+    return ucCRC8;
+
   while (dwLength--)
   {
     ucIndex = ucCRC8 ^ (*pchMessage++);
