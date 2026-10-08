@@ -15,27 +15,28 @@ void PWM_Init(void);
 /**
  * @brief  PWM启动，只是对HAL库函数的形式上的封装
  */
-void PWM_Start(TIM_HandleTypeDef *htim, uint32_t Channel);
+HAL_StatusTypeDef PWM_Start(TIM_HandleTypeDef *htim, uint32_t Channel);
 
 /**
  * @brief  PWM停止，只是对HAL库函数的形式上的封装
  */
-void PWM_Stop(TIM_HandleTypeDef *htim, uint32_t Channel);
+HAL_StatusTypeDef PWM_Stop(TIM_HandleTypeDef *htim, uint32_t Channel);
 
 /**
  * @brief  设置PWM周期
  * @param  htim: 定时器句柄
  * @param  period: 周期，单位为秒
- * 只是对HAL库函数的形式上的封装
+ * @return 设置周期状态
  */
-void PWM_SetPeriod(TIM_HandleTypeDef *htim, float period);
+HAL_StatusTypeDef PWM_SetPeriod(TIM_HandleTypeDef *htim, float period);
 
 /**
  * @brief  设置PWM占空比
  * @param  htim: 定时器句柄
  * @param  dutyratio: 占空比，0~1
- * 只是对HAL库函数的形式上的封装
+ * @param  channel: PWM通道
+ * @return 设置占空比状态
  */
-void PWM_SetDutyRatio(TIM_HandleTypeDef *htim, float dutyratio, uint32_t channel);
+HAL_StatusTypeDef PWM_SetDutyRatio(TIM_HandleTypeDef *htim, float dutyratio, uint32_t channel);
 
 #endif //RM26_H7_BSP_PWM_HPP
