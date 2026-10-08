@@ -19,9 +19,39 @@ void PID::UpdateResult()
     err[1] = err[0];
     err[0] = ref - fdb;
 
-    // TODO: 按 mode 实现位置式或增量式 PID，并限制积分和最终输出。
-    // 完成前始终保持零输出。
-    pResult = iResult = dResult = result = 0.0f;
+    switch (mode)
+    {
+
+    /*
+    mode只是pid计算方式不同而已 
+    位置式：
+    u(k) = P(k) + I(k) + D(k)
+
+    增量式：
+    u(k) = u(k-1) + Δu(k)
+    */
+    case PID_POSITION:
+        pResult = kp * err[0];
+        iResult = Numeric::LimitABS(iResult + ki * err[0], maxIOut);
+        dResult = kd * (err[0] - err[1]);
+        result = Numeric::LimitABS(pResult + iResult + dResult, maxOut);
+        break;
+
+    case PID_DELTA:
+    {
+        const float previousIResult = iResult;
+
+        pResult = kp * (err[0] - err[1]);
+        iResult = Numeric::LimitABS(iResult + ki * err[0], maxIOut);
+        dResult = kd * (err[0] - 2.0f * err[1] + err[2]);
+        result = Numeric::LimitABS(result + pResult + (iResult - previousIResult) + dResult, maxOut);
+        break;
+    }
+
+    default:
+        pResult = iResult = dResult = result = 0.0f;
+        break;
+    }
 }
 
 void PID::Clear()
