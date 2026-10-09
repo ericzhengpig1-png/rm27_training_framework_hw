@@ -2,6 +2,7 @@
 #define BMI088_HPP
 
 #include "IMU.hpp"
+#include "main.h"
 
 namespace BMI088
 {
@@ -13,12 +14,12 @@ namespace BMI088
  */
 enum BMI088_SENSOR
 {
-    BMI088_CS_ACC = 0,
-    BMI088_CS_GYRO = 1,
+    BMI088_CS_ACC = 0,  // 本次 SPI 通信选择 BMI088 的加速度计部分
+    BMI088_CS_GYRO = 1, // 本次 SPI 通信选择 BMI088 的陀螺仪部分
 };
 
 /*---------------------------硬件连接---------------------------*/
-// TODO: 配置 BMI088 使用的 SPI 句柄，以及加速度计和陀螺仪各自的 GPIO 片选端口、引脚。
+// SPI1 由 CubeMX 初始化；PA4/ACC_CS 选择加速度计，PB0/GYRO_CS 选择陀螺仪。
 
 #define HEATING_RESISTANCE_TIM htim10            //< 加热电阻定时器
 #define HEATING_RESISTANCE_CHANNEL TIM_CHANNEL_1 //< 加热电阻通道
@@ -53,17 +54,18 @@ enum BMI088_SENSOR
 
 #define ACC_INT_STAT_1_ADDR 0x1D
 
-#define TEMP_MSB_ADDR 0x22
-#define TEMP_LSB_ADDR 0x23
-#define TEMP_LEN 2
+#define TEMP_MSB_ADDR 0x22  // 温度数据高字节寄存器地址？
+#define TEMP_LSB_ADDR 0x23  // 温度数据低字节寄存器地址
+#define TEMP_LEN 2  // 温度数据共读取2字节
 #define TEMP_UNIT 0.125f
 #define TEMP_BIAS 23.0f
 
 #define ACC_CONF_ADDR 0x40
 #define ACC_CONF_RESERVED 0x01
-#define ACC_CONF_BWP_OSR4 0x00
-#define ACC_CONF_BWP_OSR2 0x01
-#define ACC_CONF_BWP_NORM 0x02
+// ACC_CONF 的 [7:4] 位是带宽/过采样设置。
+#define ACC_CONF_BWP_OSR4 0x80
+#define ACC_CONF_BWP_OSR2 0x90
+#define ACC_CONF_BWP_NORM 0xA0
 #define ACC_CONF_ODR_12_5_Hz 0x05
 #define ACC_CONF_ODR_25_Hz 0x06
 #define ACC_CONF_ODR_50_Hz 0x07
@@ -182,8 +184,9 @@ enum BMI088_SENSOR
          * @param addr 寄存器地址
          * @param data 数据
          * @param len 数据长度
+         * @return HAL_OK 表示读取完成；其他值表示参数或 SPI 通信失败。
          */
-        void ReadReg(enum BMI088_SENSOR cs, uint8_t addr, uint8_t *data, uint8_t len);
+        HAL_StatusTypeDef ReadReg(enum BMI088_SENSOR cs, uint8_t addr, uint8_t *data, uint8_t len);
 
         /**
          * @brief 写数据到寄存器
@@ -191,8 +194,9 @@ enum BMI088_SENSOR
          * @param addr 寄存器地址
          * @param data 数据
          * @param len 数据长度
+         * @return HAL_OK 表示写入完成；其他值表示参数或 SPI 通信失败。
          */
-        void WriteReg(enum BMI088_SENSOR cs, uint8_t addr, uint8_t *data, uint8_t len);
+        HAL_StatusTypeDef WriteReg(enum BMI088_SENSOR cs, uint8_t addr, const uint8_t *data, uint8_t len);
 
         void Config() override;
         void Calibrate() override;
@@ -211,7 +215,12 @@ enum BMI088_SENSOR
 
 
     private:
-        float Gyro_offset[3]; // 陀螺仪零飘
+        float Gyro_offset[3] = {}; // 陀螺仪零飘；标定前保持为零
+        bool AccReadOk = false;
+        bool GyroReadOk = false;
+        bool TemperatureReadOk = false;
+        bool HeatingPwmStarted = false;
+        bool ConfigOk = false;
     };
 
 }
