@@ -7,6 +7,10 @@
 
 #include "DJIMotor.hpp"
 
+// M2006 + C610 的固定参数。若改用其他电调或电机，在这里重新确认。
+constexpr float M2006_GEAR_RATIO = 36.0f;
+constexpr int16_t M2006_MAX_CURRENT_COMMAND = 10000;
+
 /**
  * @class M2006
  * @brief M2006电机的控制类，继承自Motor类。

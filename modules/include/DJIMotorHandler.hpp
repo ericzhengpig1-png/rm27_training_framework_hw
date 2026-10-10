@@ -3,6 +3,13 @@
 
 #include "DJIMotor.hpp"
 
+// C610 与 DJI 电机反馈协议参数。若后续更换协议，在这里统一调整。
+constexpr uint16_t DJI_MOTOR_FEEDBACK_ID_MIN = 0x201;
+constexpr uint16_t DJI_MOTOR_FEEDBACK_ID_MAX = 0x208;
+constexpr uint16_t DJI_MOTOR_CONTROL_ID_1_4 = 0x200;
+constexpr uint16_t DJI_MOTOR_CONTROL_ID_5_8 = 0x1FF;
+constexpr uint16_t DJI_MOTOR_ENCODER_RESOLUTION = 8192;
+
 /**
  * @brief 电机控制类
  */
@@ -36,8 +43,11 @@ public:
 
     /**
      * @brief 发送控制数据
+     * @retval HAL_OK 所有存在的控制报文均已提交发送
+     * @retval HAL_BUSY 至少一个 CAN 发送邮箱已满
+     * @retval HAL_ERROR 至少一个 CAN 发送失败
      */
-    void sendControlData();
+    HAL_StatusTypeDef sendControlData();
 
     /**
      * @brief 处理并更新电机反馈数据

@@ -1,21 +1,89 @@
 #include "M2006.hpp"
 
+namespace
+{
+int16_t LimitCurrent(float current, uint16_t max_current)
+{
+    if (current != current)
+    {
+        return 0;
+    }
+
+    if (max_current > 32767U)
+    {
+        max_current = 32767U;
+    }
+
+    const float current_limit = static_cast<float>(max_current);
+    if (current > current_limit)
+    {
+        return static_cast<int16_t>(max_current);
+    }
+    if (current < -current_limit)
+    {
+        return -static_cast<int16_t>(max_current);
+    }
+    return static_cast<int16_t>(current);
+}
+}
+
 M2006::M2006()
 {
-    // TODO: 根据 M2006 手册设置减速比、允许电流和速度/位置环 PID 参数。
-    // 基类初始化为松开模式、零电流；完成配置前不允许驱动电机。
+    gearBox = GearBox_M2006;
+    maxCurrent = M2006_MAX_CURRENT_COMMAND;
+    speedPid.maxOut = static_cast<float>(maxCurrent);
+    speedPid.maxIOut = static_cast<float>(maxCurrent);
 }
 
 void M2006::setOutput()
 {
-    // TODO: 分别实现松开、速度和位置模式；位置模式需要串联位置环与速度环。
-    // TODO: 将 PID 输出限制在 maxCurrent 范围内后写入 currentSet。
-    currentSet = 0;
+    switch (controlMode)
+    {
+    case RELAX_MODE:
+        speedPid.Clear();
+        positionPid.Clear();
+        currentSet = 0;
+        break;
+
+    case SPD_MODE:
+        speedPid.ref = speedSet;
+        speedPid.fdb = motorFeedback.speedFdb;
+        speedPid.UpdateResult();
+        currentSet = LimitCurrent(speedPid.result, maxCurrent);
+        break;
+
+    case POS_MODE:
+        positionPid.ref = positionSet;
+        positionPid.fdb = motorFeedback.positionFdb;
+        positionPid.UpdateResult();
+
+        speedPid.ref = positionPid.result;
+        speedPid.fdb = motorFeedback.speedFdb;
+        speedPid.UpdateResult();
+        currentSet = LimitCurrent(speedPid.result, maxCurrent);
+        break;
+
+    default:
+        speedPid.Clear();
+        positionPid.Clear();
+        currentSet = 0;
+        break;
+    }
 }
 
 M2006::MotorStateTypedef M2006::AliveCheck()
 {
-    // TODO: 比较 AliveFlag 与 Pre_AliveFlag，更新在线状态并保存本次计数。
-    MotorState = MOTOR_OFFLINE;
+    if (AliveFlag == Pre_AliveFlag)
+    {
+        MotorState = MOTOR_OFFLINE;
+        controlMode = RELAX_MODE;
+        currentSet = 0;
+    }
+    else
+    {
+        MotorState = MOTOR_ONLINE;
+    }
+
+    Pre_AliveFlag = AliveFlag;
     return MotorState;
 }
