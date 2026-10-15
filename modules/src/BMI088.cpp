@@ -277,9 +277,37 @@ namespace BMI088
         if (!write_config(BMI088_CS_ACC, ACC_SOFTRESET_ADDR, ACC_SOFTRESET_VAL)) return;
         tx_thread_sleep(100); //< 延时100ms,重启需要时间
 
+        uint8_t acc_spi_dummy = 0xFF;
+        HAL_StatusTypeDef acc_spi_dummy_status =
+            ReadReg(BMI088_CS_ACC, ACC_CHIP_ID_ADDR,
+                    &acc_spi_dummy, 1);
+                    
+        if (acc_spi_dummy_status != HAL_OK)
+            {
+                ConfigOk = false;
+                self_test.INIT_ERR = true;
+                return;
+            }
+        
         //< 打开加速度计电源
         if (!write_config(BMI088_CS_ACC, ACC_PWR_CTRL_ADDR, ACC_PWR_CTRL_ON)) return;
         tx_thread_sleep(150);
+
+        // 临时观察：开启操作之后，立即读回使能寄存器
+        uint8_t acc_enable_readback = 0xFF;
+        HAL_StatusTypeDef acc_enable_read_status =
+            ReadReg(BMI088_CS_ACC, ACC_PWR_CTRL_ADDR, &acc_enable_readback, 1);
+
+        // uint8_t acc_enable_value = ACC_PWR_CTRL_ON;
+        // HAL_StatusTypeDef acc_enable_retry_write_status =
+        //     WriteReg(BMI088_CS_ACC, ACC_PWR_CTRL_ADDR,
+        //             &acc_enable_value, 1);
+        // tx_thread_sleep(150);
+
+        // uint8_t acc_enable_retry_readback = 0xFF;
+        // HAL_StatusTypeDef acc_enable_retry_read_status =
+        //     ReadReg(BMI088_CS_ACC, ACC_PWR_CTRL_ADDR,
+        //             &acc_enable_retry_readback, 1);
 
         //< 加速度计变成正常模式
         if (!write_config(BMI088_CS_ACC, ACC_PWR_CONF_ADDR, ACC_PWR_CONF_ACT)) return;
