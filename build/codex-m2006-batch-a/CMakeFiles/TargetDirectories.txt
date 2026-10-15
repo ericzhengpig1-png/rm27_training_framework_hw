@@ -1,0 +1,7 @@
+D:/embedded/rm27_training_framework_hw/build/codex-m2006-batch-a/CMakeFiles/board.dir
+D:/embedded/rm27_training_framework_hw/build/codex-m2006-batch-a/CMakeFiles/edit_cache.dir
+D:/embedded/rm27_training_framework_hw/build/codex-m2006-batch-a/CMakeFiles/rebuild_cache.dir
+D:/embedded/rm27_training_framework_hw/build/codex-m2006-batch-a/cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir
+D:/embedded/rm27_training_framework_hw/build/codex-m2006-batch-a/cmake/stm32cubemx/CMakeFiles/ThreadX.dir
+D:/embedded/rm27_training_framework_hw/build/codex-m2006-batch-a/cmake/stm32cubemx/CMakeFiles/edit_cache.dir
+D:/embedded/rm27_training_framework_hw/build/codex-m2006-batch-a/cmake/stm32cubemx/CMakeFiles/rebuild_cache.dir

@@ -91,6 +91,16 @@ namespace
         (void)input;
 
         bmi088.Config();
+        
+        uint8_t acc_pwr_ctrl_readback = 0xFF;
+        uint8_t acc_pwr_conf_readback = 0xFF;
+
+        HAL_StatusTypeDef acc_pwr_ctrl_status = bmi088.ReadReg(
+            BMI088::BMI088_CS_ACC, ACC_PWR_CTRL_ADDR, &acc_pwr_ctrl_readback, 1);
+
+        HAL_StatusTypeDef acc_pwr_conf_status = bmi088.ReadReg(
+            BMI088::BMI088_CS_ACC, ACC_PWR_CONF_ADDR, &acc_pwr_conf_readback, 1);
+        
         bmi088.VerifyAccChipID();
         bmi088.VerifyGyroChipID();
         PublishIMUData();

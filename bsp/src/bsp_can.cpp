@@ -12,7 +12,7 @@ static CAN_RxCallback can_rx_callback = nullptr;
  * 设置CAN硬件的滤波器，用于优化接收数据的处理。
  * 更多信息，请参考原文，链接：https://blog.csdn.net/weixin_54448108/article/details/128570593
  */
-void CAN_Init(void)  // 配置接收过滤器 启动CAN 控制器 开启RX FIFO0接收通知 
+HAL_StatusTypeDef CAN_Init(void)  // 配置接收过滤器 启动CAN 控制器 开启RX FIFO0接收通知
 {
     can1_ready = false;
     can2_ready = false;
@@ -29,16 +29,24 @@ void CAN_Init(void)  // 配置接收过滤器 启动CAN 控制器 开启RX FIFO0
 
     can_filter_st.FilterBank = 0;                                      ///< 过滤器组-双CAN可指定0~27
     can_filter_st.FilterFIFOAssignment = CAN_RX_FIFO0;                 ///< 与过滤器组管理的 FIFO
-    if (HAL_CAN_ConfigFilter(&hcan1, &can_filter_st) != HAL_OK) return;
-    if (HAL_CAN_Start(&hcan1) != HAL_OK) return;
-    if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) return;
+    HAL_StatusTypeDef status = HAL_CAN_ConfigFilter(&hcan1, &can_filter_st);
+    if (status != HAL_OK) return status;
+    status = HAL_CAN_Start(&hcan1);
+    if (status != HAL_OK) return status;
+    status = HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);
+    if (status != HAL_OK) return status;
     can1_ready = true;
 
     can_filter_st.FilterBank = 14;                                     ///< 过滤器组-双CAN可指定0~27
-    if (HAL_CAN_ConfigFilter(&hcan2, &can_filter_st) != HAL_OK) return;
-    if (HAL_CAN_Start(&hcan2) != HAL_OK) return;
-    if (HAL_CAN_ActivateNotification(&hcan2, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) return;
+    status = HAL_CAN_ConfigFilter(&hcan2, &can_filter_st);
+    if (status != HAL_OK) return status;
+    status = HAL_CAN_Start(&hcan2);
+    if (status != HAL_OK) return status;
+    status = HAL_CAN_ActivateNotification(&hcan2, CAN_IT_RX_FIFO0_MSG_PENDING);
+    if (status != HAL_OK) return status;
     can2_ready = true;
+
+    return HAL_OK;
 }
 
 void CAN_RegisterRxCallback(CAN_RxCallback callback)

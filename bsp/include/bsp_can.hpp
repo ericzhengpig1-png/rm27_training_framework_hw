@@ -12,8 +12,9 @@ using CAN_RxCallback = void (*)(CAN_HandleTypeDef *hcan,
  * @brief 初始化CAN滤波器配置。
  * 设置CAN硬件的滤波器，用于优化接收数据的处理。
  * 更多信息，请参考原文，链接：https://blog.csdn.net/weixin_54448108/article/details/128570593
+ * @retval HAL_OK CAN1 和 CAN2 均初始化成功；其他状态表示初始化失败。
  */
-void CAN_Init(void);
+HAL_StatusTypeDef CAN_Init(void);
 
 /**
  * @brief 注册 CAN RX FIFO0 标准数据帧处理函数。

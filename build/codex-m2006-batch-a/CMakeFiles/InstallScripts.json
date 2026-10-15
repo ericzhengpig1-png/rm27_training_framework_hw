@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/embedded/rm27_training_framework_hw/build/codex-m2006-batch-a/cmake_install.cmake",
+		"D:/embedded/rm27_training_framework_hw/build/codex-m2006-batch-a/cmake/stm32cubemx/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

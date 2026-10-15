@@ -11,6 +11,8 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
 # Define the build type
@@ -45,11 +47,25 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    ../bsp/src/bsp_can.cpp
+    ../bsp/src/bsp_pwm.cpp
+    ../bsp/src/bsp_usart.cpp
+    ../libs/src/crc.cpp
+    ../libs/src/math.cpp
+    ../libs/src/pid.cpp
+    ../modules/src/BMI088.cpp
+    ../modules/src/DJIMotorHandler.cpp
+    ../modules/src/M2006.cpp
+    ../threads/src/alivethread.cpp
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    ../bsp/include
+    ../libs/include
+    ../modules/include
+    ../threads/include
 )
 
 # Add project symbols (macros)
