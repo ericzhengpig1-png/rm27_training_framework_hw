@@ -2,6 +2,7 @@
 
 #include "BMI088.hpp"
 #include "DJIMotorHandler.hpp"
+#include "MotorControl.hpp"
 #include "main.h"
 
 namespace
@@ -81,6 +82,7 @@ namespace
         imu_data_snapshot.angular_velocity = bmi088.gyro_data;
         imu_data_snapshot.initialized = !bmi088.self_test.INIT_ERR;
         imu_data_snapshot.acceleration_valid = !bmi088.self_test.INIT_ERR && !bmi088.self_test.ACC_DATA_ERR;
+        imu_data_snapshot.temperature_valid = !bmi088.self_test.INIT_ERR && !bmi088.self_test.ACC_DATA_ERR && !bmi088.self_test.TEMP_DATA_ERR;
         imu_data_snapshot.angular_velocity_valid = !bmi088.self_test.INIT_ERR && !bmi088.self_test.GYRO_DATA_ERR;
 
         tx_mutex_put(&imu_data_mutex);
@@ -174,24 +176,6 @@ namespace
         handler->updateFeedback(message->can, message->data, motor_index);
     }
 
-    void UpdateRegisteredMotorOutputs(DJIMotorHandler *handler)
-    {
-        if (handler == nullptr)
-            return;
-
-        for (uint8_t can_index = 0U; can_index < 2U; ++can_index)
-        {
-            for (uint8_t motor_index = 0U; motor_index < 8U; ++motor_index)
-            {
-                DJIMotor *motor = handler->DJIMotorList[can_index][motor_index];
-                if (motor != nullptr)
-                    motor->setOutput();
-            }
-        }
-
-        handler->sendControlData();
-    }
-
     void ControlThreadEntry(ULONG input)
     {
         (void)input;
@@ -199,6 +183,8 @@ namespace
         DJIMotorHandler *const motor_handler = DJIMotorHandler::Instance();
         CAN_RegisterRxCallback(CanRxCallback);
         const HAL_StatusTypeDef can_init_status = CAN_Init();
+        if (can_init_status == HAL_OK)
+            MotorControl_Init(*motor_handler);
         if (tx_mutex_get(&can_rx_snapshot_mutex, TX_WAIT_FOREVER) == TX_SUCCESS)
         {
             can_rx_snapshot.initialized = can_init_status == HAL_OK;
@@ -229,8 +215,7 @@ namespace
             if (can_init_status == HAL_OK)
             {
                 // The Control thread owns motor feedback, PID output and online checks.
-                motor_handler->AllMotorAliveCheck();
-                UpdateRegisteredMotorOutputs(motor_handler);
+                MotorControl_Update(*motor_handler, tx_time_get());
             }
 
             SignalHeartbeat(&control_heartbeat_semaphore);

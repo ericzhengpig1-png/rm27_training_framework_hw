@@ -45,6 +45,10 @@ void M2006::setOutput()
         currentSet = 0;
         break;
 
+    case CURRENT_MODE:
+        currentSet = LimitCurrent(currentSet, maxCurrent);
+        break;
+
     case SPD_MODE:
         speedPid.ref = speedSet;
         speedPid.fdb = motorFeedback.speedFdb;
@@ -86,4 +90,34 @@ M2006::MotorStateTypedef M2006::AliveCheck()
 
     Pre_AliveFlag = AliveFlag;
     return MotorState;
+}
+
+void M2006::Relax()
+{
+    controlMode = RELAX_MODE;
+    speedSet = 0.0f;
+    positionSet = 0.0f;
+    currentSet = 0;
+    speedPid.Clear();
+    positionPid.Clear();
+}
+
+void M2006::SetOpenLoopCurrent(int16_t current)
+{
+    controlMode = CURRENT_MODE;
+    currentSet = current;
+}
+
+void M2006::SetSpeedTarget(float speed)
+{
+    controlMode = SPD_MODE;
+    speedSet = speed;
+}
+
+void M2006::ConfigureSpeedPid(float kp, float ki, float kd, float max_output, float max_i_output)
+{
+    speedPid.Tuning(kp, ki, kd);
+    speedPid.maxOut = max_output;
+    speedPid.maxIOut = max_i_output;
+    speedPid.Clear();
 }

@@ -30,6 +30,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 project(${CMAKE_PROJECT_NAME})
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
+option(ENABLE_MOTOR_DEBUG "Build the GDB motor test entry points" OFF)
+
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
 
@@ -56,8 +58,18 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ../modules/src/BMI088.cpp
     ../modules/src/DJIMotorHandler.cpp
     ../modules/src/M2006.cpp
+    ../modules/src/MotorControl.cpp
     ../threads/src/alivethread.cpp
 )
+
+if(ENABLE_MOTOR_DEBUG)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+        ../modules/src/MotorDebug.cpp
+    )
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+        MOTOR_DEBUG_ENABLED=1
+    )
+endif()
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE

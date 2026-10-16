@@ -197,6 +197,21 @@ HAL_StatusTypeDef DJIMotorHandler::sendControlData()
     return result;
 }
 
+HAL_StatusTypeDef DJIMotorHandler::updateOutputsAndSend()
+{
+    for (uint8_t can_index = 0U; can_index < 2U; ++can_index)
+    {
+        for (uint8_t motor_index = 0U; motor_index < 8U; ++motor_index)
+        {
+            DJIMotor *motor = DJIMotorList[can_index][motor_index];
+            if (motor != nullptr)
+                motor->setOutput();
+        }
+    }
+
+    return sendControlData();
+}
+
 void DJIMotorHandler::updateFeedback(CAN_HandleTypeDef *hcan, uint8_t *rx_data, int index)
 {
     if ((hcan != &hcan1 && hcan != &hcan2) || rx_data == nullptr || index < 0 || index >= 8)

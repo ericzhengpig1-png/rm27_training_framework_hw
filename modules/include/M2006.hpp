@@ -38,6 +38,11 @@ public:
     void setOutput() override;
 
     MotorStateTypedef AliveCheck() override;
+
+    void Relax();
+    void SetOpenLoopCurrent(int16_t current);
+    void SetSpeedTarget(float speed);
+    void ConfigureSpeedPid(float kp, float ki, float kd, float max_output, float max_i_output);
 };
 
 #endif //RM26_M2006_HPP

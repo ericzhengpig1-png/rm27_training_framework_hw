@@ -404,11 +404,13 @@ namespace BMI088
         if (ReadReg(BMI088_CS_ACC, TEMP_MSB_ADDR, raw_data, TEMP_LEN) != HAL_OK)
         {
             TemperatureReadOk = false;
+            self_test.TEMP_DATA_ERR = true;
             *temp = 0.0f;
             return;
         }
 
         TemperatureReadOk = true;
+        self_test.TEMP_DATA_ERR = false;
         int16_t raw_temperature = (static_cast<int16_t>(raw_data[0]) << 3U) |  // 每一个raw 8位 高八位全填满 左移三位 低八位只有左侧三位 向右移动5位 拼接
                                   (static_cast<int16_t>(raw_data[1]) >> 5U);
 

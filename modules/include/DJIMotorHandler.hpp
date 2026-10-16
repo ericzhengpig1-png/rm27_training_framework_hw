@@ -49,6 +49,8 @@ public:
      */
     HAL_StatusTypeDef sendControlData();
 
+    HAL_StatusTypeDef updateOutputsAndSend();
+
     /**
      * @brief 处理并更新电机反馈数据
      * @param hcan CAN 句柄

@@ -29,7 +29,8 @@ public:
     {
         RELAX_MODE = 0,         ///< 电机松开模式，所有输出均为0。
         SPD_MODE = 1,           ///< 速度模式，控制电机速度。
-        POS_MODE = 2            ///< 位置模式，控制电机到特定位置。
+        POS_MODE = 2,           ///< 位置模式，控制电机到特定位置。
+        CURRENT_MODE = 3        ///< 开环电流模式，不经过 PID。
     };
 
     enum MotorStateTypedef

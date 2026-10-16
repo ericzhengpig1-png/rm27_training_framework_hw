@@ -13,6 +13,7 @@ struct ImuDataSnapshot
     gyro_data_t angular_velocity{};
     bool initialized = false;
     bool acceleration_valid = false;
+    bool temperature_valid = false;
     bool angular_velocity_valid = false;
 };
 
