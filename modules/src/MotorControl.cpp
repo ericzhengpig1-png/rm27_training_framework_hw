@@ -20,6 +20,13 @@ constexpr MotorSpeedPidConfig DEFAULT_SPEED_PID{
     500.0f,
     150.0f};
 
+constexpr MotorPositionPidConfig DEFAULT_POSITION_PID{
+    3.5f,
+    0.002f,
+    0.0f,
+    0.3f,
+    0.05f};
+
 void RefreshSnapshot(const DJIMotorHandler &handler)
 {
     motor_snapshot.online = can1_id201_motor.MotorState == DJIMotor::MOTOR_ONLINE;
@@ -28,6 +35,8 @@ void RefreshSnapshot(const DJIMotorHandler &handler)
     motor_snapshot.speed_rad_s = can1_id201_motor.motorFeedback.speedFdb;
     motor_snapshot.current_feedback = can1_id201_motor.motorFeedback.currentFdb;
     motor_snapshot.position_rad = can1_id201_motor.motorFeedback.positionFdb;
+    motor_snapshot.position_error_rad = can1_id201_motor.positionPid.err[0];
+    motor_snapshot.position_speed_target_rad_s = can1_id201_motor.positionPid.result;
     motor_snapshot.speed_error_rad_s = can1_id201_motor.speedPid.err[0];
     motor_snapshot.current_command = can1_id201_motor.currentSet;
     for (uint8_t i = 0U; i < 8U; ++i)
@@ -38,8 +47,18 @@ void RefreshSnapshot(const DJIMotorHandler &handler)
 void MotorControl_Init(DJIMotorHandler &handler)
 {
     MotorControl_ConfigureSpeedPid(DEFAULT_SPEED_PID);
+    MotorControl_ConfigurePositionPid(DEFAULT_POSITION_PID);
     handler.registerMotor(&can1_id201_motor, &hcan1, 0x201);
     RefreshSnapshot(handler);
+}
+
+void MotorControl_ConfigurePositionPid(const MotorPositionPidConfig &config)
+{
+    can1_id201_motor.ConfigurePositionPid(config.kp,
+                                          config.ki,
+                                          config.kd,
+                                          config.max_output,
+                                          config.max_i_output);
 }
 
 void MotorControl_ConfigureSpeedPid(const MotorSpeedPidConfig &config)
@@ -66,6 +85,15 @@ bool MotorControl_SetSpeedTarget(float speed_rad_s)
         return false;
 
     can1_id201_motor.SetSpeedTarget(speed_rad_s);
+    return true;
+}
+
+bool MotorControl_SetPositionTarget(float position_rad)
+{
+    if (can1_id201_motor.MotorState != DJIMotor::MOTOR_ONLINE)
+        return false;
+
+    can1_id201_motor.SetPositionTarget(position_rad);
     return true;
 }
 

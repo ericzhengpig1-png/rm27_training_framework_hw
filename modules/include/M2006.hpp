@@ -42,7 +42,9 @@ public:
     void Relax();
     void SetOpenLoopCurrent(int16_t current);
     void SetSpeedTarget(float speed);
+    void SetPositionTarget(float position);
     void ConfigureSpeedPid(float kp, float ki, float kd, float max_output, float max_i_output);
+    void ConfigurePositionPid(float kp, float ki, float kd, float max_output, float max_i_output);
 };
 
 #endif //RM26_M2006_HPP

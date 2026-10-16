@@ -114,10 +114,24 @@ void M2006::SetSpeedTarget(float speed)
     speedSet = speed;
 }
 
+void M2006::SetPositionTarget(float position)
+{
+    controlMode = POS_MODE;
+    positionSet = position;
+}
+
 void M2006::ConfigureSpeedPid(float kp, float ki, float kd, float max_output, float max_i_output)
 {
     speedPid.Tuning(kp, ki, kd);
     speedPid.maxOut = max_output;
     speedPid.maxIOut = max_i_output;
     speedPid.Clear();
+}
+
+void M2006::ConfigurePositionPid(float kp, float ki, float kd, float max_output, float max_i_output)
+{
+    positionPid.Tuning(kp, ki, kd);
+    positionPid.maxOut = max_output;
+    positionPid.maxIOut = max_i_output;
+    positionPid.Clear();
 }
