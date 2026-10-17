@@ -1,0 +1,9 @@
+# Local editor configuration
+/.vscode/
+
+# CMake build outputs and debug snapshots
+/board/build/
+/build/
+
+# Unreferenced preview exported from the submitted chassis PDF
+/assets/chassis/Page1.jpg
