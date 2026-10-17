@@ -1,5 +1,293 @@
 # 调试与开发日志
 
+## Obsidian 调试记录（原始记录）
+
+| 阶段               | 你要做的事                           | 要获得的证据                  | 这一阶段能说明什么            |
+| ---------------- | ------------------------------- | ----------------------- | -------------------- |
+| 1. 确认调试环境        | 确认 VS Code 的构建、调试工具，以及调试器到板子的连接 | 明确用什么编译、用什么连接 STM32     | 调试所需的路径和工具已经明确       |
+| 2. 编译当前代码        | 从当前源码生成用于调试的固件                  | 编译、链接成功，明确本次生成的 ELF 路径  | 代码能生成固件；还不代表硬件正常     |
+| 3. 下载并进入调试       | 将本次固件下载到板子，让程序停在 `main()`       | VS Code 显示程序暂停在对应源码位置   | 下载和基本调试链路已经打通        |
+| 4. 确认 IMU 线程运行   | 在 IMU 线程入口设置断点，继续运行             | 程序命中 `ImuThreadEntry()` | 程序已经走到 BMI 的执行入口     |
+| 5. 验证 BMI 通信与初始化 | 观察初始化过程、两部分芯片 ID 和错误标志          | 读到的 ID 与预期一致，并检查初始化状态   | 获得 BMI 通信正常的初步证据     |
+| 6. 验证静止数据        | 将板子静置，观察加速度、角速度和温度              | 记录数值、单位、波动情况            | 判断数据是否具有合理的物理意义      |
+| 7. 验证运动响应        | 有控制地倾斜或转动板子，比较前后数据              | 数据变化与动作相符               | 判断轴向、符号和数据更新是否合理     |
+| 8. 整理结果          | 记录条件、操作、观测值和判断依据                | 一份可重复的实验记录              | 下次能复现，也能解释为什么认为通过或失败 |
+
+配置：CMake 读取工程设置，生成构建规则
+  ↓
+编译、链接：把 C/C++ 源码变成 board.elf 固件
+  ↓
+烧录：通过 ST-Link，把固件写入 STM32 的 Flash
+
+进入正确的工程目录
+Set-Location D:\embedded\rm27_training_framework_hw\board
+
+配置 Debug 构建  cmake --preset Debug
+编译并链接固件   cmake --build --preset Debug
+
+烧录
+& "D:\OpenOCD\bin\openocd.exe" -s "D:/OpenOCD/share/openocd/scripts" -f "interface/stlink.cfg" -c "transport select swd" -f "target/stm32f4x.cfg" -c "adapter speed 1000" -c "program D:/embedded/rm27_training_framework_hw/board/build/Debug/board.elf verify reset exit"
+
+在.vscode 下面写了 launch.json
+以下内容：只用配置一次
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "C板：停在 main",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/board/build/Debug/board.elf",
+            "armToolchainPath": "D:/arm-gnu-toolchain-13.3.rel1-mingw-w64-i686-arm-none-eabi/bin",
+            "serverpath": "D:/OpenOCD/bin/openocd.exe",
+            "searchDir": [
+                "D:/OpenOCD/share/openocd/scripts"
+            ],
+            "configFiles": [
+                "interface/stlink.cfg"
+            ],
+            "openOCDLaunchCommands": [
+                "transport select swd",
+                "source [find target/stm32f4x.cfg]",
+                "adapter speed 1000"
+            ],
+            "runToEntryPoint": "main"
+        }
+    ]
+}
+
+再`ImuThreadEntry` 的 bmi088.Config() 打断点成功
+在左侧“监视”中添加并展开：bmi088.self_tes
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261015102014.png>)
+bmi088.VerifyAccChipID();
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261015102954.png>)
+BMI 初始化阶段结束后，加速度计、陀螺仪 ID 错误标志及初始化错误标志均为 `false`。本次 ID 校验通过，配置写入未报告失败；数据有效性待验证。
+
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261015104850.png>)
+开始更新了 出现的问题是加速度的数据没有发生变化 但temp和陀螺仪的数据在变
+log1： 加速度计使能寄存器状态和预期不一致
+下一步排查一下原始的加速度数据读取有没有问题 以及是不是转换的函数写错了 还是没有成功return
+1 断点打在读取之后
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261015105043.png>)
+现象是出现了很多0值 why？
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261015105313.png>)
+下一步检查 加速度测量是否真的启用了
+BMI088 的“能读到芯片 ID”和“正在输出加速度”是不同条件。手册中有两个直接控制加速度采集的寄存器：
+|寄存器|地址|当前程序希望设置的值|含义|
+|---|---|---|---|
+|`ACC_PWR_CTRL`|`0x7D`|`0x04`|开启加速度计|
+|`ACC_PWR_CONF`|`0x7C`|`0x00`|进入活动模式，允许采集|
+检查config里面到底有没有配置好寄存器 我们在线程里面直接在config后面去开启
+uint8_t acc_pwr_ctrl_readback = 0xFF;
+uint8_t acc_pwr_conf_readback = 0xFF;
+
+HAL_StatusTypeDef acc_pwr_ctrl_status = bmi088.ReadReg(
+    BMI088::BMI088_CS_ACC, ACC_PWR_CTRL_ADDR, &acc_pwr_ctrl_readback, 1);
+
+HAL_StatusTypeDef acc_pwr_conf_status = bmi088.ReadReg(
+    BMI088::BMI088_CS_ACC, ACC_PWR_CONF_ADDR, &acc_pwr_conf_readback, 1);
+预期结果：acc_pwr_ctrl_readback  应该是0x04 表示开启
+          acc_pwr_conf_readback 0x00 活动模式
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261015110155.png>)
+分析：
+	现象：加速度 XYZ 持续为零；原始六字节均为零。
+	配置读回：
+	  ACC_PWR_CTRL：HAL_OK，读回 0x00，期望 0x04。
+	  ACC_PWR_CONF：HAL_OK，读回 0x00，符合预期。
+	判断：发现加速度计使能状态与期望不一致。
+	待查：开启写入是否生效，以及之后是否发生状态变化。
+读取没有问题 看看是不是没有成功写入
+
+贼tm神奇啊 重新写入一遍之后 就可以了
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261015114919.png>)
+
+woc真傻逼 ：
+Bosch 官方驱动的 `bmi08a_soft_reset()`，在发送加速度计软复位命令、等待完成后，**会额外进行一次 Chip ID 的 dummy SPI 读取**
+软复位：复位到默认值状态
+dummy spi：BMI 的加速度计初始默认使用 I2C 总线，需要片选切换到 SPI。
+
+所以说第一次是 dummy SPI 读取，应该读不到，所以我一开始要自己写一个 dummy，然后省掉那一次读取。
+
+加入软复位后的 dummy 访问后，第一次使能读回正确，你也已经观察到加速度和陀螺仪数据恢复
+[log1 done]
+
+然后把 BMI 的数值作为一个物理上的计算，看看有没有偏离它的物理意义。
+
+| 组别  | 摆放状态 | \(a_x\)（m/s²） | \(a_y\)（m/s²） | \(a_z\)（m/s²） | 合成大小 \(\lvert\mathbf{a}\rvert\)（m/s²） | 相对误差   | 温度     |
+| --- | ---- | ------------- | ------------- | ------------- | ------------------------------------- | ------ | ------ |
+| 1   | 平放   | 0.166882      | -0.039478     | 9.573303      | 9.574839                              | -2.30% | 27.875 |
+| 2   | 平放   | 0.161499      | -0.107666     | 9.602014      | 9.603975                              | -2.00% | 28.375 |
+| 3   | 平放   | 0.139966      | 0.028711      | 9.593041      | 9.594105                              | -2.10% | 28.375 |
+| 4   | 立起   | -0.538330     | -9.605603     | -0.385803     | 9.628409                              | -1.75% | 28.250 |
+
+加速度计静态数据初步合理，约 2% 的偏差暂时接受并记录，后续按使用需求决定是否标定
+
+现在是陀螺仪的数据，去看一下合不合理，物理意义
+通过顺时针和逆时针旋转看 X 轴的变化，动态响应的方向是正确的，但没有做更精细的判断。
+
+gpt给我了一段DMI的验收标准
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261015162723.png>)
+
+单电机控制：
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261015163032.png>)
+
+
+BMI 收尾与记录
+    ↓
+线程、内存的基础检查
+    ↓
+CAN 与单电机完整验证
+    ↓
+其他外设补验
+    ↓
+联合运行、栈使用复查、最终整理
+
+BMI 收尾
+- **启动可重复性**：确认每次复位、重新上电都能正常初始化，成功不依赖上一次调试留下的状态。
+- **脱离断点连续运行**：确认程序按正常速度运行时也能持续采集，不依赖单步操作额外提供的等待时间。
+- **通信失败识别**：确认读取出错时，程序能发现，并明确告诉使用者“这份数据无效”。
+- **跨线程提供数据**：确认 BMI 读到的结果能正确传到其他线程，完成从采集到使用的完整流程。
+
+程序自主运行后，`alive` 线程取得的 IMU 快照显示初始化成功、数据有效
+这个地方需要等待一会儿，因为一开始的初始化芯片都需要花时间等待。等 30 秒后再添加断点，就可以看到初始化的结果和 snapshot。
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261015165440.png>)
+断电把 launch.json 改成了 attach 模式，附着模式就不让调试器帮助 MCU 复位，然后发现是可以的，跑了几次
+快速体检 让数据从头走到尾 跑通找范围 再深入找原因
+
+错误判断：
+读取加速度 → 判断读取是否成功 → 设置错误标志
+          → 更新共享快照 → 其他线程读取快照
+现在错误标签前面改动一下 然后看看传下去的几个坎有没有发生改变
+**`ACC_DATA_ERR = true`**    `acceleration_valid = false`    成功done
+
+验证两段：
+加速度失败 → 共享快照标为无效 → alive 取到“无效”
+温度读取失败 → 温度错误被记录 → 快照标为无效 → alive 取到“无效”
+
+
+
+复现问题 写清预期和实际 缩小范围 观察关键值 主要假设 做最小实验 确认修好
+脑子留住：要解决什么 怎样算成功 系统大致怎么流 当前原因 用什么证据判断修好了
+AI 找位置 列可能原因 建议断电 小实验 改代码 补测试
+
+
+
+我现在放权让你去做这个调试，你可以去终端里面，在监视变量里面去写，帮我把温度这个地方调好就行。不要改我最终的代码，不要提交。
+你需要返回的是每一步：
+
+1. 你为什么做这个决定？
+2. 为什么用这个实验？
+3. 看了哪些变量？为什么看这些变量？
+4. 真实的结果是什么样的？
+5. 根据这个结果，你有没有调整这个实验？
+6. 成功了没有？
+7. 最后验收标准是什么？
+
+
+请回答我以下几个问题：
+1. 温度数据从哪里产生，最后被哪个线程使用？讲一下有哪些函数（在什么文件里）与温度数据的读取、写入、转移有关，最后被用在哪个线程，未来用来处理什么问题
+2. 为什么加速度失败会影响本轮温度的有效性？
+3. 正常、温度失败、加速度失败、下一轮恢复时，各个有效标志（看什么变量）应该是什么？
+4. 每个结论应该在哪个动作完成之后观察？
+5. 这次用调试器改返回值证明了什么，又没有证明什么？
+
+
+| 步骤                                                                                                                           | 为什么做、用了什么实验                                                                                                                                                                                                                                                                               | 看哪些变量，实际看到了什么                                                                                                                                                                               | 是否调整、结果                           |
+| ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| 1. 确认程序版本                                                                                                                    | 先只读比对板上 Flash 与当前 ELF，避免拿新代码的变量名解释旧程序。                                                                                                                                                                                                                                                    | 从 `0x08000188` 起发现差异。烧录当前 ELF 后，OpenOCD 报告 `Verified OK`。                                                                                                                                   | 发现版本不一致，因此先烧录再调试。通过。              |
+| 2. 正常温度读取                                                                                                                    | 在快照字段赋值完成后停住，确认传感器读数能进入共享快照。                                                                                                                                                                                                                                                              | `TEMP_DATA_ERR=false`、`acc_data.temperature=30.75°C`、`imu_data_snapshot.temperature_valid=true`；初始化和加速度有效标志也为 `true`。                                                                       | 无需调整。通过。                          |
+| 3. 模拟温度通信失败及恢复                                                                                                               | 在温度 `ReadReg` 返回后，仅将这一次的返回值从 `HAL_OK(0)` 改为 `1`，检验失败分支及下一轮恢复。                                                                                                                                                                                                                             | 失败当轮：`TEMP_DATA_ERR=true`、温度 `0`、`temperature_valid=false`，而加速度仍有效。继续运行后：温度 `30.875°C`，错误标志恢复为 `false`，有效标志恢复为 `true`。                                                                      | 无需调整。通过。                          |
+| 4. 模拟加速度读取失败                                                                                                                 | 温度读取位于加速度读取之后；若前者被跳过，需要防止上一次温度成功状态被误用。                                                                                                                                                                                                                                                    | 将一次加速度 `ReadReg` 返回值改为失败后，`ACC_DATA_ERR=true`、加速度和温度数据清零。虽然旧的 `TEMP_DATA_ERR` 仍为 `false`，快照的 `temperature_valid=false`。                                                                     | 证实快照中同时检查加速度状态是必要的。通过。            |
+| 5. 检查另一线程取得快照                                                                                                                | 在 Alive 线程的 `Threads_GetIMUData()` 调用后观察局部变量，并临时改写共享标志验证复制。                                                                                                                                                                                                                               | 正常时，局部快照有 `30.875°C` 且 `temperature_valid=true`。复制前把共享标志改为 `false`，单步越过调用后，调用成功且局部标志为 `false`。继续运行后两处均恢复为 `true`，温度为 `30.625°C`。                                                            | 第一次断在调用语句上，复制尚未发生；已将断点移到下一行重做。通过。 |
+| 要看的变量                                                                                                                        | 谁写它、写了什么                                                                                                                                                                                                                                                                                  | 断点放在哪里看                                                                                                                                                                                     |                                   |
+| `bmi088.AccReadOk`                                                                                                           | [ReadAccData() (line 354)](/D:/embedded/rm27_training_framework_hw/modules/src/BMI088.cpp:354) 第 360 行，根据三轴加速度的 `ReadReg()` 返回值写入                                                                                                                                                         | [BMI088.cpp 第 361 行 (line 361)](/D:/embedded/rm27_training_framework_hw/modules/src/BMI088.cpp:361)：第 360 行已执行，可判断本轮加速度 SPI 读取是否成功                                                          |                                   |
+| `bmi088.TemperatureReadOk`、`bmi088.self_test.TEMP_DATA_ERR`                                                                  | [ReadAccTemperature() (line 395)](/D:/embedded/rm27_training_framework_hw/modules/src/BMI088.cpp:395) 在温度读取失败时分别写 `false`、`true`；成功时写 `true`、`false`                                                                                                                                      | 正常或仅温度失败时，停在 [ReadAccData() 第 372 行 (line 372)](/D:/embedded/rm27_training_framework_hw/modules/src/BMI088.cpp:372)：第 371 行的温度函数调用已结束。`TemperatureReadOk` 是对象私有成员，重点看可公开观察的 `TEMP_DATA_ERR` |                                   |
+| `bmi088.acc_data.temperature`                                                                                                | `ReadAccTemperature()` 通过 `temp` 指针写入摄氏度，失败写 `0`；`ReadAccData()` 保存整份 `acc_data`。若三轴读取失败，`ReadAccData()` 直接把整份数据清零                                                                                                                                                                        | 正常或仅温度失败看第 372 行；三轴失败则看 [ReadAccData() 第 365 行 (line 365)](/D:/embedded/rm27_training_framework_hw/modules/src/BMI088.cpp:365)，因为这条路径提前返回，**不会走到第 372 行**                                   |                                   |
+| `bmi088.self_test.ACC_DATA_ERR`                                                                                              | [VerifyAccData() (line 191)](/D:/embedded/rm27_training_framework_hw/modules/src/BMI088.cpp:191) 根据 `AccReadOk` 和三轴数值检查结果写入                                                                                                                                                               | 停在 [ImuThreadEntry() 第 115 行 (line 115)](/D:/embedded/rm27_training_framework_hw/threads/src/alivethread.cpp:115)：第 114 行的 `VerifyAccData()` 已执行                                            |                                   |
+| `imu_data_snapshot.acceleration.temperature`、`initialized`、`acceleration_valid`、`temperature_valid`、`angular_velocity_valid` | [PublishIMUData() (line 75)](/D:/embedded/rm27_training_framework_hw/threads/src/alivethread.cpp:75) 第 80–85 行复制数据并计算标志。其中 `temperature_valid = !INIT_ERR && !ACC_DATA_ERR && !TEMP_DATA_ERR`                                                                                             | 停在 [第 87 行 (line 87)](/D:/embedded/rm27_training_framework_hw/threads/src/alivethread.cpp:87)：所有快照字段已写完；此时互斥锁尚未释放，适合**观察共享快照**                                                              |                                   |
+| Alive 线程局部的 `imu_snapshot.acceleration.temperature`、`imu_snapshot.temperature_valid`、`imu_status_valid`                      | [Threads_GetIMUData() (line 424)](/D:/embedded/rm27_training_framework_hw/threads/src/alivethread.cpp:424) 用 `*snapshot = imu_data_snapshot` 复制整份快照；[AliveThreadEntry() (line 253)](/D:/embedded/rm27_training_framework_hw/threads/src/alivethread.cpp:253) 根据调用是否成功写 `imu_status_valid` | 停在 [AliveThreadEntry() 第 254 行 (line 254)](/D:/embedded/rm27_training_framework_hw/threads/src/alivethread.cpp:254)：第 253 行调用已完成。**不要停在第 253 行就判断局部快照**                                     |                                   |
+温度有效性链路已经完成真机验证；陀螺仪运行期失败和初始化 Chip ID 失败尚未做同等级覆盖。
+
+现在对陀螺仪和chip id做验证
+
+| 阶段、数据流与变量写入                                                              | 实验和观察位置：停下时执行到哪一步                                                                                                                               | 预期                                                                          | 实际观察                                                                                                                                                                      | 调整、结论与边界                                                                                              |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 6. 陀螺仪正常基线：`ReadGyroData()` → `VerifyGyroData()` → 快照                    | 复位后第二次命中发布第 87 行；第一次发布只有初始化状态，尚未采样                                                                                                              | `GYRO_DATA_ERR=false`、角速度有效                                                 | 三轴约 `{0.0117, -0.00426, 0}`，`GYRO_DATA_ERR=false`、`angular_velocity_valid=true`                                                                                           | 区分了“刚初始化”和“已完成一轮采样”                                                                                   |
+| 7. **单次陀螺仪读取失败**：SPI 返回 → `GyroReadOk` → `GYRO_DATA_ERR` → 共享快照          | 停在 `BMI088.cpp:381` 的 `ReadReg()` **返回后、`GyroReadOk` 赋值前**，读到真实返回值 `0`，仅将本次返回寄存器改为 `1`；再停在发布第 87 行                                              | `GyroReadOk=false`、`GYRO_DATA_ERR=true`、三轴清零、`angular_velocity_valid=false` | 四项均如此；同轮 `acceleration_valid=true`、`temperature_valid=true`                                                                                                               | 第一次尝试在中间单步后未命中发布断点，CPU 停在 HAL SPI 等待循环；原因未被证明。复位后改为只在返回点和发布点停住，取得完整结果，不能把第一次卡住当作代码失败                  |
+| 8. 陀螺仪失败到 Alive，以及恢复                                                     | 为避免单次失败在 Alive 下次读取前被覆盖，只在调试会话中连续改写陀螺仪读取返回值；停在 Alive 第 254 行。删除注入断点后再次观察                                                                        | 失败局部快照无效；撤销后恢复                                                              | 失败时 `imu_status_valid=true`，Alive 局部三轴 `{0,0,0}`、`angular_velocity_valid=false`，同时 `GyroReadOk=false`、`GYRO_DATA_ERR=true`；撤销后局部角速度非零、有效标志 `true`，错误标志 `false`            | **跨线程失败与恢复通过**。连续故障仍是调试器模拟，未验证真实总线故障                                                                  |
+| 9. **陀螺仪 Chip ID 读取状态失败**：`VerifyGyroChipID()` → `INIT_ERR` → 快照 → Alive | 启动时停在 `BMI088.cpp:184` 的 `ReadReg()` **返回后、局部 `status` 赋值前**；真实返回 `0`、ID `0x0F`，仅把返回寄存器改为 `1`。在 `ImuThreadEntry():107`、发布第 87 行、Alive 第 254 行观察 | 陀螺仪 ID 报错、初始化失败，Alive 取得未初始化快照；不应在普通采样轮自动恢复                                 | `GYRO_CHIP_ID_ERR=true`、`ACC_CHIP_ID_ERR=false`、`INIT_ERR=true`；共享及 Alive 快照 `initialized=false`、数据有效标志全 `false`，而 `imu_status_valid=true`。撤销注入后继续运行，状态仍为失败               | **失败传播通过**。复位后真实返回 `0`、ID `0x0F`，`INIT_ERR=false`，下一次采样 `angular_velocity_valid=true`。这验证了为何恢复需要重新初始化 |
+| 10. **加速度计 Chip ID 值不匹配及复位恢复**                                           | 启动时停在 `BMI088.cpp:174` 的 `ReadReg()` **返回后、校验前**；真实返回 `0`、ID `0x1E`，仅把本次局部 `chip_id` 改为 `0`。同样观察检查结束、发布和 Alive 复制后                              | 加速度计 ID 报错；陀螺仪 ID 可以仍通过；复位后两者恢复                                             | `ACC_CHIP_ID_ERR=true`、`GYRO_CHIP_ID_ERR=false`、`INIT_ERR=true`；共享及 Alive 快照未初始化、数据无效。撤销注入并复位后，两颗 ID 分别重读为 `0x1E`、`0x0F`，错误标志均为 `false`；随后三类数据有效标志全为 `true`，Alive 也取得有效数据 | 两颗芯片的独立 ID 路径均有实测。加速度计这轮测试的是**值不匹配**，没有另行注入它的 SPI 返回失败                                                |
+
+
+准备开始调单电机
+
+先跑一下 最小可运行程序 看看CAN有没有对齐 能不能让电机驱动起来
+
+电机保持松弛 在线程里面注册一个电机 CAN初始化成功后 注册到`CAN1/0x201
+添加了[MotorConfig.cpp](D:/embedded/rm27_training_framework_hw/modules/src/MotorConfig.cpp) 保存测试状态和反馈结果 电机的信息注册在这里面
+
+第一次可执行程序测试
+Control 线程在计算完默认松弛输出、发送 CAN 帧之前调用它。用 GDB 显式触发后，程序先确认 `CAN1/0x201` 反馈在线，再发送约 **100 ms、指令值 1000** 的电流，随后持续发送零电流并锁定本次测试。GDB 等脉冲结束后再读取最高反馈转速、位置变化和最终电流；整个过程不接 PID。验收点是非零帧出现、反馈随之变化、测试结束后回到零电流。
+
+最小开环控制链 ： 注册、发送、接收反馈、定时停止这一条最小链路跑通了
+完成电机基础动作验收（）  PID部分
+
+![调试截图](<../assets/logs/obsidian-debug/Pasted image 20261016143025.png>)
+
+没毛
+
+| 试验                | 实际反馈与现场观察                                                                                           | 控制帧记录                                                            | 停止后的零输出                                                                   | 异常情况                                     |
+| ----------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------- |
+| 正向 `+500`，50 tick | 位置反馈 `+0.000021305 → +0.005411544 rad`；转速**绝对值**峰值 `54 rpm`，电流反馈原始值绝对峰值 `184`。你看到输出轴动了，但没看清方向。      | 脉冲期间 CAN1/`0x200` **软件打包缓存**：`01 F4 00 00 00 00 00 00`；提交 `5` 帧。 | `RELAX_MODE`，`currentSet=0`，当前发送缓存全零。                                     | 提交失败 `0`；CAN 丢帧 `0`，`hcan1.ErrorCode=0`。 |
+| 反向 `-500`，50 tick | 位置反馈 `+0.000021305 → -0.007158577 rad`；转速**绝对值**峰值 `140 rpm`，电流反馈原始值绝对峰值 `166`。你判断运动方向应该与上次相反，为逆时针。 | 脉冲期间 CAN1/`0x200` **软件打包缓存**：`FE 0C 00 00 00 00 00 00`；提交 `5` 帧。 | `RELAX_MODE`，`currentSet=0`，当前发送缓存全零；停止后发送邮箱记录标准 ID `0x200`、DLC `8`、数据全零。 | 提交失败 `0`；CAN 丢帧 `0`，`hcan1.ErrorCode=0`。 |
+
+是什么原因导致的 AI 团队去跨层级写这样子的代码
+
+单开了一个motordebug
+
+±0.5 rad/s 的纯 P 候选：Kp = 2800
+±0.1 rad/s：不存在合格的纯 P 值
+普通固件：暂不回填任何参数
+
+
+
+### 2026-10-16：只接 C 板后的阶段验收
+
+这轮只接 C 板，电机、C610、串口回环线、I²C 从设备和示波器都不在。先烧普通 `Debug` 固件，不开 `MotorDebug`，避免把调试入口当成正式功能。没有修改仓库源码。
+
+| 验收项 | 这轮怎么验 | 实际观察 | 当前判断 |
+| --- | --- | --- | --- |
+| 最终构建、下载 | `cmake --preset Debug`、`cmake --build --preset Debug`，再用 OpenOCD 下载并校验 | 构建无报错；Flash 显示 `Verified OK`；普通 ELF 中没有 `MotorDebug` 和 GDB 电机试验符号 | **通过** |
+| BMI088 Chip ID | 在两次 `ReadReg()` 返回后观察通信状态和 `chip_id` | ACC：`HAL_OK / 0x1E`；GYRO：`HAL_OK / 0x0F` | **通过** |
+| BMI088 数据与单位 | 读取 IMU 共享快照；连续做 3 次硬件复位后再读 | 三次均 `initialized=true`，加速度、温度、角速度有效；温度约 `28.125 °C`；加速度单位 `m/s²`，角速度单位 `rad/s` | **通过**。本轮是复位复验，不等同于拔电后的真正重新上电 |
+| BMI088 失败识别 | 复查前面的单次 SPI 失败、Chip ID 不匹配和跨线程快照记录 | 对应错误标志会置位，快照有效标志变为 `false`；恢复或重新初始化后的状态也已经记录 | **已有真机调试器注入证据**；真实断线故障仍没有再次制造 |
+| RGB 三色灯 | 暂停 CPU 后分别切换 PH12、PH11、PH10，再读 GPIOH 输出寄存器，最后恢复健康状态绿灯 | 红、绿、蓝分别为 `ODR=0x1000 / 0x0800 / 0x0400`，恢复后为 `0x0800` | **GPIO 控制通过**；这次没有由人眼记录亮度和颜色照片 |
+| ThreadX 心跳、互斥锁和快照 | 读取线程控制块、两把互斥锁、两个心跳信号量和 IMU/CAN 快照 | IMU、Control、Alive 都已运行并进入休眠态；运行次数持续增加；互斥锁观察时未被占用；IMU 快照一致；CAN 初始化成功 | **通过** |
+| 线程栈和字节池 | 扫描 `0xEF` 栈填充值，并读取 byte pool | 三个线程栈都是 1024 B；估算最大占用：IMU 472 B、Control 496 B、Alive 392 B；32 KiB 字节池剩余 29664 B | **当前余量足够** |
+| 主栈和堆 | 查看链接脚本和 map | 最小主栈 1024 B，最小堆 512 B；本次 ELF 的 `.bss=37328 B`，`._user_heap_stack=1540 B` | **配置已确认**；主栈运行期最高占用还没有测量 |
+| 无电机时的安全状态 | 普通固件运行后读取 MotorControl 快照 | `online=false`、`RELAX_MODE`、`current_command=0`、控制帧 8 字节全零 | **通过**；电机撤下后没有运动输出 |
+| 速度环、位置—速度双环 | 采用前面电机仍连接时的正式 MotorDebug 复验数据；本轮核对参数已经进入普通固件 | 速度环：`Kp=1800, Ki=5, Kd=0, max=500, max_i=150`；位置环：`Kp=3.5, Ki=0.002, Kd=0, max=0.3 rad/s, max_i=0.05 rad/s` | **历史真机验收通过，参数已进入普通固件**；本轮因电机撤下未重跑 |
+| CAN ID、DLC、字节序与掉线 | 采用前面的电机真机记录；本轮只确认无反馈时保持松弛 | 反馈 `0x201`、控制 `0x200`、DLC 8；`+500 → 01 F4`，`-500 → FE 0C`；掉线后模式回松弛、控制帧归零 | **已有真机证据**；没有独立 CAN 分析仪抓总线波形 |
+| UART1、UART6 收发 | 读取两个 HAL 句柄和错误码 | 两路均为 115200、8N1、TX/RX，`gState/RxState=READY`，`ErrorCode=0` | **只完成初始化检查**；没有回环线，实际发送、DMA 接收和回调未验收 |
+| PWM 波形 | 读取 TIM8/TIM10 句柄和定时器参数 | 两个句柄均 READY；TIM8 参数对应 50 Hz、CCR1=1500；TIM10 参数对应约 33.6 kHz、CCR1=0；当前均未启动 | **未完成波形验收**；缺示波器，`TEMP_CTRL_ERR=true` 也说明温控 PWM 没有进入工作态 |
+| I²C3 通信 | 读取句柄、寄存器和引脚电平 | I²C3 为 400 kHz，状态 READY、错误码 0、外设已使能；PA8/SCL、PC9/SDA 空闲时均为高 | **只完成初始化和总线空闲检查**；没有从设备，未验证地址应答和寄存器读写 |
+| 底盘推导、SPI/I²C 文档、日志 | 检查 `docs/` | `spi.md` 和 `logs.md` 已有内容；`chassis.md`、`iic.md` 仍是空文件 | **SPI 与日志已有；底盘推导、I²C 文档未完成** |
+
+前面“`Kp=2800` 候选、普通固件暂不回填”的记录是中途状态。最终速度环和双环已经完成后续复验，正式参数现在位于 `MotorControl`，普通固件会加载；`MotorDebug` 只负责调用同一套正式接口做试验。
+
+#### 这轮之后还不能打勾的项目
+
+1. 给 UART1、UART6 分别接回环或串口工具，实测阻塞/中断/DMA 发送与 DMA-to-idle 接收。
+2. 用示波器测 PC6 的 50 Hz/1.5 ms 波形，以及 PF6 的 0%、10%、50% 占空比和停止状态。
+3. 接入已知地址的 I²C3 从设备，确认 ACK、寄存器读写和通信失败返回值。
+4. 填写 `docs/chassis.md` 和 `docs/iic.md`。
+5. C 板真正断电再上电一次，复查 `0x1E/0x0F` 和三类数据有效标志；这一步需要现场拔插电源。
+6. 若要把电机项作为“最终整机复验”，重新接回 C610 与 M2006，再跑松弛、正反速度、正反位置双环和掉线保护；当前保留的是撤线前的有效记录。
+
+---
+
 ## 2026-10-07：I2C3 内部上拉配置
 
 开发：为 I2C3 的 PA8/SCL 与 PC9/SDA 配置 `GPIO_PULLUP`，并同步更新 CubeMX 配置文件 `board/board.ioc` 与生成代码 `board/Core/Src/i2c.c`。两根引脚仍为开漏复用输出（`GPIO_MODE_AF_OD`），复用功能仍为 `GPIO_AF4_I2C3`。
